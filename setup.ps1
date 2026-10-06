@@ -8,8 +8,9 @@
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/justinnguyenqsbn/qsbn-ai-toolkit-plugin-setup/main/setup.ps1))) -Method plugin
 #
 # Run it from inside the project's git repo. Never calls `exit`, so it is safe under `iex`.
+# No [ValidateSet] here: under `iex` the param block turns into variable attributes and an empty
+# default would be rejected. The value is validated inside the function instead.
 param(
-    [ValidateSet('plugin', 'skills')]
     [string]$Method = $env:QSBN_METHOD,
     [switch]$Yes
 )
@@ -84,6 +85,8 @@ function Invoke-QsbnSetup {
             default { throw 'Invalid choice.' }
         }
     }
+
+    if ($Method -notin 'plugin', 'skills') { throw "Invalid method '$Method' (use plugin or skills)." }
 
     # --- Plugin -----------------------------------------------------------------------------
     if ($Method -eq 'plugin') {
