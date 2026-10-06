@@ -55,9 +55,10 @@ teammates are prompted to install it.
 
 - copies each `skills/qsbn-*` to `.agents/skills/` and links it into `.claude/skills/`
   (relative symlink on macOS/Linux, junction on Windows, plain copy if linking is not possible),
-- copies `commands/qsbn/*.md` to `.claude/commands/qsbn/`, so `/qsbn:*` works in Claude Code.
+- copies `commands/qsbn/*.md` to `.claude/commands/qsbn/`, so `/qsbn:*` works in Claude Code,
+- copies `agents/*.md` to `.claude/agents/` (the subagents some skills spawn).
 
-On update it first removes every `qsbn-*` skill and the `qsbn` commands folder, so skills deleted
+On update it first removes every `qsbn-*` skill and agent and the `qsbn` commands folder, so skills deleted
 upstream disappear. Anything not named `qsbn-*` is left alone. The installer never touches git:
 commit `.agents/` and `.claude/` yourself to share the skills with your team (on Windows, git
 stores a junction's contents as regular files, so teammates get real copies).

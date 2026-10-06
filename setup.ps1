@@ -8,7 +8,8 @@
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/justinnguyenqsbn/qsbn-ai-toolkit-plugin-setup/main/setup.ps1))) -Method plugin
 #
 # files: clones the toolkit to a temp folder, then copies skills\ to .agents\skills\ (linked into
-# .claude\skills\) and commands\qsbn\ to .claude\commands\qsbn\. Commit those folders to share them.
+# .claude\skills\), commands\qsbn\ to .claude\commands\qsbn\ and agents\ to .claudegents\.
+# Commit those folders to share them.
 # Run it from inside the project's git repo. Never calls `exit`, so it is safe under `iex`.
 # No [ValidateSet] here: under `iex` the param block turns into variable attributes and an empty
 # default would be rejected. The value is validated inside the function instead.
@@ -45,7 +46,7 @@ function Invoke-QsbnSetup {
     # Paths of a previous files install (also catches skills left behind by skills.sh).
     function Get-InstalledFiles {
         $paths = @()
-        foreach ($pattern in '.agents/skills/qsbn-*', '.claude/skills/qsbn-*', '.claude/commands/qsbn') {
+        foreach ($pattern in '.agents/skills/qsbn-*', '.claude/skills/qsbn-*', '.claude/commands/qsbn', '.claude/agents/qsbn-*') {
             $paths += @(Get-Item -Path $pattern -Force -ErrorAction SilentlyContinue)
         }
         $paths
@@ -182,6 +183,12 @@ function Invoke-QsbnSetup {
         if (Test-Path -LiteralPath $commands) {
             Copy-Item -Path (Join-Path $commands '*.md') -Destination '.claude/commands/qsbn' -Force
         }
+
+        $agents = Join-Path $src 'agents'
+        if (Test-Path -LiteralPath $agents) {
+            New-Item -ItemType Directory -Force -Path '.claude/agents' | Out-Null
+            Copy-Item -Path (Join-Path $agents '*.md') -Destination '.claude/agents' -Force
+        }
     } finally {
         if (Test-Path -LiteralPath $tmp) {
             # git marks pack files read-only, so -Force is needed.
@@ -189,7 +196,7 @@ function Invoke-QsbnSetup {
         }
     }
 
-    Write-Host "Installed $count skills into .agents/skills (linked from .claude/skills) and the /qsbn:* commands into .claude/commands/qsbn."
+    Write-Host "Installed $count skills into .agents/skills (linked from .claude/skills), the /qsbn:* commands into .claude/commands/qsbn and the subagents into .claude/agents."
     Write-Host 'Done. Restart your agent session so they are picked up. Commit .agents/ and .claude/ to share them with your team.'
 }
 

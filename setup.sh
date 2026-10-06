@@ -8,7 +8,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/justinnguyenqsbn/qsbn-ai-toolkit-plugin-setup/main/setup.sh | sh -s -- --plugin
 #
 # --files clones the toolkit to a temp folder, then copies skills/ to .agents/skills/ (linked into
-# .claude/skills/) and commands/qsbn/ to .claude/commands/qsbn/. Commit those folders to share them.
+# .claude/skills/), commands/qsbn/ to .claude/commands/qsbn/ and agents/ to .claude/agents/.
+# Commit those folders to share them.
 # Run it from inside the project's git repo. POSIX sh, so it also works when piped to `sh`.
 set -eu
 
@@ -84,7 +85,7 @@ plugin_scopes() {
 
 # Paths of a previous files install (also catches skills left behind by skills.sh), one per line.
 files_installed() {
-  for p in .agents/skills/qsbn-* .claude/skills/qsbn-* .claude/commands/qsbn; do
+  for p in .agents/skills/qsbn-* .claude/skills/qsbn-* .claude/commands/qsbn .claude/agents/qsbn-*; do
     if [ -e "$p" ] || [ -L "$p" ]; then echo "$p"; fi
   done
 }
@@ -96,7 +97,7 @@ remove_files() {
   echo "Removing previously installed qsbn files:"
   echo "$existing"
   # .claude first so links go before their targets.
-  for p in .claude/skills/qsbn-* .claude/commands/qsbn .agents/skills/qsbn-*; do
+  for p in .claude/skills/qsbn-* .claude/commands/qsbn .claude/agents/qsbn-* .agents/skills/qsbn-*; do
     if [ -e "$p" ] || [ -L "$p" ]; then rm -rf "$p"; fi
   done
 }
@@ -182,5 +183,10 @@ if [ -d "$src/commands/qsbn" ]; then
   cp "$src"/commands/qsbn/*.md .claude/commands/qsbn/
 fi
 
-echo "Installed $count skills into .agents/skills (linked from .claude/skills) and the /qsbn:* commands into .claude/commands/qsbn."
+if [ -d "$src/agents" ]; then
+  mkdir -p .claude/agents
+  cp "$src"/agents/*.md .claude/agents/
+fi
+
+echo "Installed $count skills into .agents/skills (linked from .claude/skills), the /qsbn:* commands into .claude/commands/qsbn and the subagents into .claude/agents."
 echo "Done. Restart your agent session so they are picked up. Commit .agents/ and .claude/ to share them with your team."
