@@ -1,12 +1,14 @@
 #!/bin/sh
 # Install or update the qsbn skills in the current project, using EITHER the Claude Code plugin
-# OR skills.sh (never both). Project scope only. Safe to re-run: installs when missing, updates
-# when present.
+# OR plain files copied into the repo (never both). Project scope only. Safe to re-run: installs
+# when missing, updates when present.
 #
 # Usage:
-#   ./setup.sh [--plugin | --skills] [--yes]
+#   ./setup.sh [--plugin | --files] [--yes]
 #   curl -fsSL https://raw.githubusercontent.com/justinnguyenqsbn/qsbn-ai-toolkit-plugin-setup/main/setup.sh | sh -s -- --plugin
 #
+# --files clones the toolkit to a temp folder, then copies skills/ to .agents/skills/ (linked into
+# .claude/skills/) and commands/qsbn/ to .claude/commands/qsbn/. Commit those folders to share them.
 # Run it from inside the project's git repo. POSIX sh, so it also works when piped to `sh`.
 set -eu
 
@@ -20,12 +22,13 @@ YES=0
 for arg in "$@"; do
   case "$arg" in
     --plugin) METHOD=plugin ;;
-    --skills) METHOD=skills ;;
+    --files|--skills) METHOD=files ;;
     -y|--yes) YES=1 ;;
-    -h|--help) sed -n '2,10p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "Unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
+[ "$METHOD" = skills ] && METHOD=files
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -50,18 +53,18 @@ echo "Project: $root"
 
 # --- Pick a method ------------------------------------------------------------------------
 if [ -z "$METHOD" ]; then
-  has_tty || die "No terminal to prompt. Pass --plugin or --skills."
+  has_tty || die "No terminal to prompt. Pass --plugin or --files."
   {
     echo
     echo "How do you want to install the qsbn skills? Pick ONE - do not use both."
     echo "  1) Claude Code plugin  (recommended for Claude Code users)"
-    echo "  2) skills.sh           (for other agents, or to copy skills into the repo)"
+    echo "  2) Files in this repo  (skills + /qsbn:* commands copied in, shareable through git)"
     printf 'Choice [1/2]: '
   } >/dev/tty
   read -r choice </dev/tty || choice=""
-  case "$choice" in 1) METHOD=plugin ;; 2) METHOD=skills ;; *) die "Invalid choice." ;; esac
+  case "$choice" in 1) METHOD=plugin ;; 2) METHOD=files ;; *) die "Invalid choice." ;; esac
 fi
-case "$METHOD" in plugin|skills) ;; *) die "Invalid method '$METHOD' (use plugin or skills)." ;; esac
+case "$METHOD" in plugin|files) ;; *) die "Invalid method '$METHOD' (use plugin or files)." ;; esac
 
 # --- Helpers ------------------------------------------------------------------------------
 # Scopes (user/project/local) the qsbn plugin is installed at for THIS project, one per line.
@@ -79,39 +82,37 @@ plugin_scopes() {
   '
 }
 
-# Names of qsbn-* skills installed in this project by skills.sh.
-skills_installed() {
-  have npx || return 0
-  # The skills are internal, so list/remove only see them with INSTALL_INTERNAL_SKILLS=1.
-  # Keep only the skill-name column (lines starting with qsbn-), after stripping colour codes.
-  esc=$(printf '\033')
-  INSTALL_INTERNAL_SKILLS=1 npx -y skills@latest list 2>/dev/null | sed "s/$esc\[[0-9;]*m//g" | awk '/^qsbn-/ { print $1 }' | sort -u || true
+# Paths of a previous files install (also catches skills left behind by skills.sh), one per line.
+files_installed() {
+  for p in .agents/skills/qsbn-* .claude/skills/qsbn-* .claude/commands/qsbn; do
+    if [ -e "$p" ] || [ -L "$p" ]; then echo "$p"; fi
+  done
 }
 
-remove_skills() {
-  names=$(skills_installed)
-  [ -n "$names" ] || return 0
-  echo "Removing installed qsbn skills:"
-  echo "$names"
-  # shellcheck disable=SC2086
-  # npx can crash on exit on Windows (libuv assertion) after a successful run, so judge by the
-  # result, not the exit code.
-  INSTALL_INTERNAL_SKILLS=1 npx -y skills@latest remove $names -y || true
-  [ -z "$(skills_installed)" ] || die "Removing the installed skills failed."
+# rm -rf on a link removes the link itself, never what it points at.
+remove_files() {
+  existing=$(files_installed)
+  [ -n "$existing" ] || return 0
+  echo "Removing previously installed qsbn files:"
+  echo "$existing"
+  # .claude first so links go before their targets.
+  for p in .claude/skills/qsbn-* .claude/commands/qsbn .agents/skills/qsbn-*; do
+    if [ -e "$p" ] || [ -L "$p" ]; then rm -rf "$p"; fi
+  done
 }
 
 # --- Plugin -------------------------------------------------------------------------------
 if [ "$METHOD" = plugin ]; then
   have claude || die "claude CLI not found. Install Claude Code first."
 
-  existing=$(skills_installed)
+  existing=$(files_installed)
   if [ -n "$existing" ]; then
     echo
-    echo "WARNING: qsbn skills are already installed through skills.sh in this project:"
+    echo "WARNING: qsbn files are already installed in this project:"
     echo "$existing"
-    echo "Do NOT use both the plugin and skills.sh: every qsbn skill would be installed twice."
-    ask "Remove the skills.sh skills now?" || die "Aborted. Remove them first with: npx skills remove <names>"
-    remove_skills
+    echo "Do NOT use both the plugin and the files: every qsbn skill and command would be installed twice."
+    ask "Remove the installed files now?" || die "Aborted. Delete those paths first."
+    remove_files
   fi
 
   scopes=$(plugin_scopes)
@@ -137,22 +138,49 @@ if [ "$METHOD" = plugin ]; then
   exit 0
 fi
 
-# --- skills.sh ----------------------------------------------------------------------------
-have npx || die "npx not found. Install Node.js first."
-
+# --- Files --------------------------------------------------------------------------------
 if [ -n "$(plugin_scopes)" ]; then
   echo
   echo "WARNING: the qsbn Claude Code plugin ($PLUGIN) is installed."
-  echo "Do NOT use both the plugin and skills.sh: every qsbn skill would be installed twice."
+  echo "Do NOT use both the plugin and the files: every qsbn skill and command would be installed twice."
   ask "Remove the plugin now?" || die "Aborted. Remove it first with: claude plugin uninstall $PLUGIN"
   for scope in $(plugin_scopes); do
     claude plugin uninstall "$PLUGIN" -s "$scope"
   done
 fi
 
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+echo "Cloning $REPO_URL ..."
+git clone --depth 1 -q "$REPO_URL" "$tmp/repo" || die "Could not clone $REPO_URL. Check your GitHub access to it."
+src="$tmp/repo"
+[ -d "$src/skills" ] || die "The cloned repo has no skills/ folder."
+
 # Remove first so skills deleted upstream disappear and new ones are picked up.
-remove_skills
-# Project scope is the default: never pass -g.
-INSTALL_INTERNAL_SKILLS=1 npx -y skills@latest add "$REPO_URL" || true
-[ -n "$(skills_installed)" ] || die "skills.sh install failed."
-echo "Done. Restart your agent session so the skills are picked up."
+remove_files
+mkdir -p .agents/skills .claude/skills .claude/commands/qsbn
+
+count=0
+for dir in "$src"/skills/*/; do
+  dir=${dir%/}
+  [ -f "$dir/SKILL.md" ] || continue
+  name=${dir##*/}
+  case "$name" in qsbn-*) ;; *) echo "Skipping '$name' (name must start with qsbn-)."; continue ;; esac
+  cp -R "$dir" ".agents/skills/$name"
+  # Relative link so the repo stays portable. Where links are unavailable (e.g. Git Bash without
+  # symlink support) `ln` makes a copy or fails: fall back to a plain copy.
+  ln -s "../../.agents/skills/$name" ".claude/skills/$name" 2>/dev/null || true
+  if [ ! -L ".claude/skills/$name" ]; then
+    rm -rf ".claude/skills/$name"
+    cp -R "$dir" ".claude/skills/$name"
+  fi
+  count=$((count + 1))
+done
+[ "$count" -gt 0 ] || die "No skills found in the cloned repo."
+
+if [ -d "$src/commands/qsbn" ]; then
+  cp "$src"/commands/qsbn/*.md .claude/commands/qsbn/
+fi
+
+echo "Installed $count skills into .agents/skills (linked from .claude/skills) and the /qsbn:* commands into .claude/commands/qsbn."
+echo "Done. Restart your agent session so they are picked up. Commit .agents/ and .claude/ to share them with your team."
